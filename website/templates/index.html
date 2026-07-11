@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Investment Portfolio System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<!-- top bar -->
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <span class="brand-name">SIPS<span class="brand-sub">Smart Investment Portfolio System</span></span>
+  </div>
+  <nav class="topnav">
+    <a href="#console">Build</a>
+    <a href="#results">Results</a>
+    <a href="#saved">Saved</a>
+    <a href="#model">Model</a>
+  </nav>
+</header>
+
+<!-- hero / input console -->
+<section class="hero" id="console">
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <p class="eyebrow">Big Data Analytics · S&amp;P 500 · 2000–2026</p>
+      <h1>Turn a number and a risk appetite<br>into a forecastable portfolio.</h1>
+      <p class="lede">A machine-learning model ranks 472 stocks; a Monte&nbsp;Carlo engine
+        forecasts where your money could land. Prices as of <strong>{{ as_of }}</strong>.</p>
+    </div>
+
+    <div class="console">
+      <div class="console-row">
+        <label for="amount">Amount to invest</label>
+        <div class="money-input">
+          <span>$</span>
+          <input type="number" id="amount" value="10000" min="100" max="10000000" step="500">
+        </div>
+      </div>
+
+      <div class="console-row">
+        <label>Risk appetite</label>
+        <div class="segmented" id="risk" role="tablist">
+          <button data-risk="Low" role="tab">Low</button>
+          <button data-risk="Medium" class="active" role="tab">Medium</button>
+          <button data-risk="High" role="tab">High</button>
+        </div>
+      </div>
+
+      <div class="console-row">
+        <label for="horizon">Forecast horizon
+          <span class="hz-val" id="hzVal">60 days</span></label>
+        <input type="range" id="horizon" min="5" max="252" value="60" step="5">
+      </div>
+
+      <button class="btn-primary" id="generate">Generate portfolio</button>
+      <p class="console-note">Academic model — not financial advice.</p>
+    </div>
+  </div>
+</section>
+
+<!-- results -->
+<main class="results" id="results" hidden>
+
+  <!-- recommendation -->
+  <section class="block">
+    <div class="block-head">
+      <h2>Recommendation</h2>
+      <p class="block-sub" id="recSub"></p>
+    </div>
+    <div class="stat-row" id="recStats"></div>
+    <div class="split">
+      <div class="card table-card">
+        <div class="card-title">Holdings</div>
+        <div class="table-scroll">
+          <table class="holdings" id="holdings"></table>
+        </div>
+      </div>
+      <div class="card chart-card">
+        <div class="card-title">Allocation</div>
+        <canvas id="allocChart"></canvas>
+      </div>
+    </div>
+    <div class="block-actions">
+      <button class="btn-ghost" id="saveBtn">Save this portfolio</button>
+      <span class="save-msg" id="saveMsg"></span>
+    </div>
+  </section>
+
+  <!-- risk -->
+  <section class="block">
+    <div class="block-head"><h2>Risk analysis</h2>
+      <p class="block-sub">How this exact basket behaved over the last two years.</p></div>
+    <div class="stat-row" id="riskStats"></div>
+    <div class="band-note" id="bandNote"></div>
+    <div class="card chart-card wide">
+      <div class="card-title">Historical portfolio value</div>
+      <canvas id="valueChart"></canvas>
+    </div>
+  </section>
+
+  <!-- forecast : hero visual -->
+  <section class="block forecast">
+    <div class="block-head"><h2>Forecast</h2>
+      <p class="block-sub" id="fcSub"></p></div>
+    <div class="stat-row" id="fcStats"></div>
+    <div class="split">
+      <div class="card chart-card">
+        <div class="card-title">Projected value — 5,000 simulations</div>
+        <canvas id="coneChart"></canvas>
+      </div>
+      <div class="card chart-card">
+        <div class="card-title">Distribution of outcomes</div>
+        <canvas id="histChart"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- conclusion -->
+  <section class="block">
+    <div class="block-head"><h2>Conclusion</h2></div>
+    <div class="conclusion" id="conclusion"></div>
+  </section>
+</main>
+
+<!-- saved / compare -->
+<section class="block shaded" id="saved">
+  <div class="block-head"><h2>Saved portfolios</h2>
+    <p class="block-sub">Stored in SQLite. Save a Low, a Medium and a High to compare them.</p></div>
+  <div class="card table-card">
+    <div class="table-scroll"><table class="saved" id="savedTable"></table></div>
+  </div>
+  <div class="block-actions">
+    <button class="btn-ghost danger" id="clearBtn">Clear all</button>
+  </div>
+</section>
+
+<!-- model evidence -->
+<section class="block" id="model">
+  <div class="block-head"><h2>Does the model add value?</h2>
+    <p class="block-sub">Out-of-sample test predictions sorted into deciles by score.</p></div>
+  <div class="split">
+    <div class="card chart-card"><div class="card-title">Average next-month return by decile</div>
+      <canvas id="decileChart"></canvas></div>
+    <div class="model-notes">
+      <div class="mini-stats" id="modelStats"></div>
+      <div class="amber-note">
+        <strong>~50% accuracy is expected.</strong> Markets are near-efficient, so per-stock
+        prediction is close to a coin flip. The decile edge — top picks out-earning bottom
+        picks — is the real proof of selection value.
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <span>Smart Investment Portfolio System · Final-year project</span>
+  <span>Academic prototype. Forecasts are statistical simulations, not guarantees or financial advice.</span>
+</footer>
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

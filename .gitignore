@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Large data & trained model — NOT deployed (the site uses website/data/ bundle)
+SP500_Historical_Data.csv
+sp500_cache.pkl
+portfolio_model.joblib
+
+# Local databases
+portfolio.db
+website/portfolio_web.db
+
+# Local QA / build artifacts
+website/qa/
+deck/*.pdf
+deck/slide-*.jpg
+
+# Keep the deployment bundle:  website/data/  IS committed on purpose.
