@@ -31,6 +31,7 @@ def uid():
 
 @app.route("/")
 def home():
+    web_service.market_snapshot()  # starts a background refresh if data is stale (non-blocking)
     return render_template("index.html", as_of=web_service.as_of())
 
 
@@ -49,6 +50,13 @@ def api_portfolio():
         return jsonify(error="Risk must be Low, Medium, or High."), 400
     horizon = max(5, min(252, horizon))
     return jsonify(web_service.build_portfolio(amount, risk, horizon))
+
+
+@app.route("/api/market")
+def api_market():
+    resp = jsonify(web_service.market_snapshot())
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/api/backtest")

@@ -27,6 +27,7 @@ sys.path.insert(0, HERE)
 import config
 import portfolio_engine as pe
 import web_db
+import market_data
 
 DATA = os.path.join(HERE, "data")
 _STATE = {"scores": None, "returns": None, "backtest": None, "as_of": None, "mode": None}
@@ -78,8 +79,27 @@ def _f(x):
     return float(x)
 
 
+def _scores_with_live_prices():
+    """Saved scores, with each stock's price replaced by its latest live price.
+    Scores/volatility stay as the model computed them; only prices move, so share
+    counts and allocations reflect today's market. Falls back per-stock to the
+    saved price if a live price is missing or looks wrong (e.g. a stock split)."""
+    base = _STATE["scores"]
+    live, info = market_data.live_prices(base["Ticker"].tolist())
+    if not live:
+        return base, {"active": False, "prices_as_of": None, "live_count": 0, "total": len(base)}
+    df = base.copy()
+    df["Adj Close"] = df["Adj Close"].astype("float64")   # bundle stores float32
+    df["model_price"] = df["Adj Close"]
+    new = df["Ticker"].map(live).astype("float64")
+    ok = new.notna() & (new / df["Adj Close"]).between(0.35, 3.0)
+    df["Adj Close"] = np.where(ok, new, df["Adj Close"])
+    return df, {"active": bool(ok.any()), "prices_as_of": info["date"],
+                "live_count": int(ok.sum()), "total": len(df)}
+
+
 def build_portfolio(amount, risk, horizon):
-    scores = _STATE["scores"]
+    scores, live = _scores_with_live_prices()
     returns = _STATE["returns"]
 
     picks = pe.apply_risk_profile(scores, risk)
@@ -93,6 +113,7 @@ def build_portfolio(amount, risk, horizon):
     holdings = [{
         "ticker": r["Ticker"], "weight": _f(r["weight"]), "allocation": _f(r["allocation"]),
         "shares": int(r["shares"]), "price": _f(r["Adj Close"]), "score": _f(r["score"]),
+        "model_price": _f(r["model_price"]) if "model_price" in picks.columns else _f(r["Adj Close"]),
     } for _, r in picks.iterrows()]
 
     counts, edges = np.histogram(final_values, bins=30)
@@ -100,6 +121,7 @@ def build_portfolio(amount, risk, horizon):
 
     return {
         "as_of": _STATE["as_of"],
+        "live": live,
         "inputs": {"amount": amount, "risk": risk, "horizon": horizon},
         "invested": _f(picks["invested"].sum()),
         "cash_left": _f(amount - picks["invested"].sum()),
@@ -167,3 +189,8 @@ def clear_saved(session_id):
 
 def as_of():
     return _STATE["as_of"]
+
+
+def market_snapshot():
+    """Index levels + feed status for the ticker strip (never blocks)."""
+    return market_data.snapshot(_STATE["scores"]["Ticker"].tolist())
