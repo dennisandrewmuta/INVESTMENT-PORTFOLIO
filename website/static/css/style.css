@@ -195,3 +195,31 @@ table{width:100%;border-collapse:collapse;font-size:.86rem}
 @media (max-width:720px){.ticker{flex-direction:column}.ticker-status{padding:.5rem 1rem;border-right:0;
   border-bottom:1px solid rgba(255,255,255,.08)}.ticker-track{padding:.55rem 1rem}}
 @media (prefers-reduced-motion:reduce){.ticker.live .tdot,.tk-skel{animation:none}}
+
+
+/* ---------- interactive builder ---------- */
+.slim{margin-top:.75rem}
+.stops{display:flex;justify-content:space-between;margin-top:.45rem}
+.stops button{background:none;border:0;color:var(--faint);font:600 .76rem var(--body);cursor:pointer;
+  padding:.15rem .35rem;border-radius:6px;transition:color .15s}
+.stops button:hover{color:#fff}.stops button.on{color:var(--green)}
+.risk-desc{margin-top:.4rem;font-size:.76rem;color:var(--ice);min-height:1.2em}
+.live-preview{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;margin:.1rem 0 1rem}
+.lp{background:rgba(11,37,69,.5);border:1px solid rgba(184,204,228,.12);border-radius:10px;padding:.6rem .8rem;min-width:0}
+.lp.wide{grid-column:1/-1;color:var(--ice);font-size:.85rem;text-align:center}
+.lp .v{font-family:var(--mono);font-size:1.1rem;font-weight:500;color:#fff;font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp .v.pos{color:#34D399}.lp .v.neg{color:#F87171}
+.lp .l{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ice);margin-top:.1rem}
+.dock{position:sticky;top:var(--topbar-h,58px);z-index:40;display:flex;gap:1.6rem;align-items:center;
+  background:rgba(8,27,51,.96);backdrop-filter:blur(8px);padding:.65rem 1.4rem;border-radius:0 0 14px 14px;
+  box-shadow:0 10px 24px rgba(11,37,69,.22);color:var(--ice)}
+.dk{display:flex;align-items:center;gap:.65rem;flex:1;min-width:0;font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;margin:0}
+.dk span{flex:none}
+.dk input{flex:1;min-width:60px}
+.dk b{flex:none;font-family:var(--mono);color:#fff;font-weight:500;text-transform:none;letter-spacing:0;
+  min-width:5.2rem;text-align:right;font-size:.78rem}
+@media (max-width:760px){
+  .dock{flex-direction:column;gap:.3rem;align-items:stretch;padding:.5rem .9rem}
+  .dk span{width:3.4rem}.dk b{min-width:6.4rem}
+}
