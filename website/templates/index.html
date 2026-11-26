@@ -48,6 +48,12 @@
   </nav>
 </header>
 
+<!-- live market strip -->
+<div class="ticker" id="ticker" aria-label="Market indices">
+  <div class="ticker-status" id="tickerStatus"><span class="tdot"></span><span id="tickerStatusText">Connecting to market data&hellip;</span></div>
+  <div class="ticker-track" id="tickerTrack"></div>
+</div>
+
 <!-- hero / input console -->
 <section class="hero" id="console">
   <div class="hero-inner">
@@ -55,7 +61,8 @@
       <p class="eyebrow">Big Data Analytics · S&amp;P 500 · 2000–2026</p>
       <h1>Turn a number and a risk appetite<br>into a forecastable portfolio.</h1>
       <p class="lede">A machine-learning model ranks 472 stocks; a Monte&nbsp;Carlo engine
-        forecasts where your money could land. Prices as of <strong>{{ as_of }}</strong>.</p>
+        forecasts where your money could land. Model data as of <strong>{{ as_of }}</strong>;
+        <span id="priceFreshness">prices update live when the market feed is available</span>.</p>
     </div>
 
     <div class="console">
