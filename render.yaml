@@ -1,12 +1,10 @@
 # render.yaml — Render.com deployment blueprint
 # In Render: New +  ->  Blueprint  ->  connect this repo. Render reads this file.
 #
-# It creates a free web service AND a free PostgreSQL database, wires them
-# together (DATABASE_URL), and generates a secret key automatically.
-#
-# Prefer to start simpler with no database? Delete the `databases:` block and the
-# DATABASE_URL env var below — the app then uses SQLite (saved data resets when the
-# free instance restarts, which is fine for a demo).
+# This version has NO database: the app falls back to SQLite automatically
+# (saved portfolios reset when the free instance restarts, which is fine for a demo).
+# To add a permanent database later, create a free Postgres on Neon or Supabase
+# and set its connection string as the DATABASE_URL environment variable in Render.
 
 services:
   - type: web
@@ -21,11 +19,4 @@ services:
         value: "3.12.4"
       - key: SECRET_KEY
         generateValue: true
-      - key: DATABASE_URL
-        fromDatabase:
-          name: sip-database
-          property: connectionString
-
-databases:
-  - name: sip-database
-    plan: free
+     
