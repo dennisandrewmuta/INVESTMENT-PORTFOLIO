@@ -146,6 +146,73 @@ def build_portfolio(amount, risk, horizon):
     }
 
 
+# ----------------------------------------------------------------------------
+# Interactive builder: one "profile" per risk level holds everything the page
+# needs to recompute a portfolio for ANY amount and horizon in the browser.
+#   * weights/scores/risk metrics do not depend on amount or horizon
+#   * simulated values scale linearly with the amount invested
+#   * one simulation to HZ_MAX days gives every shorter horizon too
+# So the heavy work (the Monte Carlo) runs once per risk level, then is cached.
+# ----------------------------------------------------------------------------
+HZ_MAX, HZ_STEP, N_SIMS = 250, 5, 5000
+_PROFILE_CACHE = {}
+
+
+def _unit_profile(risk):
+    """Heavy, price-independent part. Cached for the life of the process."""
+    if risk in _PROFILE_CACHE:
+        return _PROFILE_CACHE[risk]
+    picks = pe.apply_risk_profile(_STATE["scores"], risk)
+    port_ret = pe.portfolio_returns(picks, _STATE["returns"])
+    m = pe.risk_metrics(port_ret)
+    band, note = pe.classify_realized_risk(m["annual_vol"])
+
+    rng = np.random.default_rng(42)
+    hist = port_ret.values
+    hist = hist[~np.isnan(hist)]
+    draws = rng.choice(hist, size=(N_SIMS, HZ_MAX), replace=True)
+    paths = np.hstack([np.ones((N_SIMS, 1)), np.cumprod(1 + draws, axis=1)])   # value of $1, day 0..HZ_MAX
+
+    pct = {f"p{p}": np.percentile(paths, p, axis=0) for p in (5, 25, 50, 75, 95)}
+    prob = (paths > 1).mean(axis=0)
+    hz = list(range(HZ_STEP, HZ_MAX + 1, HZ_STEP))
+    grid = np.arange(0, 101)
+    quant = [np.percentile(paths[:, h], grid) for h in hz]      # final-value distribution per horizon
+
+    def r(a, n):
+        return [round(float(v), n) for v in a]
+
+    prof = {
+        "tickers": picks[["Ticker", "weight", "score"]].to_dict("records"),
+        "metrics": {"annual_vol": _f(m["annual_vol"]), "annual_return": _f(m["annual_return"]),
+                    "sharpe": _f(m["sharpe"]), "max_drawdown": _f(m["max_drawdown"]),
+                    "band": band, "band_note": note},
+        "curve": r((1 + port_ret).cumprod().tail(504).values, 5),
+        "bands": {k: r(v, 5) for k, v in pct.items()},
+        "prob": r(prob, 4),
+        "hz": hz,
+        "q": [r(row, 5) for row in quant],
+        "n_sims": N_SIMS,
+    }
+    _PROFILE_CACHE[risk] = prof
+    return prof
+
+
+def build_profile(risk):
+    """Profile for the browser: cached simulation + CURRENT prices for the holdings."""
+    prof = _unit_profile(risk)
+    scores, live = _scores_with_live_prices()
+    price = dict(zip(scores["Ticker"], scores["Adj Close"]))
+    model = dict(zip(scores["Ticker"], scores["model_price"])) if "model_price" in scores.columns else price
+    holdings = [{"ticker": t["Ticker"], "weight": float(t["weight"]), "score": float(t["score"]),
+                 "price": float(price[t["Ticker"]]), "model_price": float(model[t["Ticker"]])}
+                for t in prof["tickers"]]
+    return {"risk": risk, "as_of": _STATE["as_of"], "live": live, "n_stocks": len(holdings),
+            "holdings": holdings, "metrics": prof["metrics"], "curve": prof["curve"],
+            "bands": prof["bands"], "prob": prof["prob"], "hz": prof["hz"], "q": prof["q"],
+            "n_sims": prof["n_sims"], "hz_max": HZ_MAX}
+
+
 def get_backtest():
     if _STATE["backtest"] is not None:
         return _STATE["backtest"]

@@ -59,6 +59,16 @@ def api_market():
     return resp
 
 
+@app.route("/api/profile")
+def api_profile():
+    risk = str(request.args.get("risk", "Medium")).title()
+    if risk not in RISKS:
+        return jsonify(error="Risk must be Low, Medium, or High."), 400
+    resp = jsonify(web_service.build_profile(risk))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/api/backtest")
 def api_backtest():
     return jsonify(web_service.get_backtest())
