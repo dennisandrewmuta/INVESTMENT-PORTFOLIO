@@ -67,29 +67,32 @@
 
     <div class="console">
       <div class="console-row">
-        <label for="amount">Amount to invest</label>
+        <label for="amount">Amount to invest <span class="hz-val" data-out="amount">$10,000</span></label>
         <div class="money-input">
           <span>$</span>
-          <input type="number" id="amount" value="10000" min="100" max="10000000" step="500">
+          <input type="number" id="amount" value="10000" min="100" max="10000000" step="100" inputmode="numeric">
         </div>
+        <input type="range" class="slim" data-ctl="amount" min="0" max="1000" value="333" aria-label="Amount to invest">
       </div>
 
       <div class="console-row">
-        <label>Risk appetite</label>
-        <div class="segmented" id="risk" role="tablist">
-          <button data-risk="Low" role="tab">Low</button>
-          <button data-risk="Medium" class="active" role="tab">Medium</button>
-          <button data-risk="High" role="tab">High</button>
+        <label>Risk appetite <span class="hz-val" data-out="risk">Medium</span></label>
+        <input type="range" data-ctl="risk" min="0" max="2" step="1" value="1" aria-label="Risk appetite">
+        <div class="stops">
+          <button type="button" data-risk-set="0">Low</button>
+          <button type="button" data-risk-set="1" class="on">Medium</button>
+          <button type="button" data-risk-set="2">High</button>
         </div>
+        <p class="risk-desc" data-out="riskdesc"></p>
       </div>
 
       <div class="console-row">
-        <label for="horizon">Forecast horizon
-          <span class="hz-val" id="hzVal">60 days</span></label>
-        <input type="range" id="horizon" min="5" max="252" value="60" step="5">
+        <label for="horizon">Forecast horizon <span class="hz-val" data-out="horizon">60 days</span></label>
+        <input type="range" id="horizon" data-ctl="horizon" min="5" max="250" value="60" step="5" aria-label="Forecast horizon in trading days">
       </div>
 
-      <button class="btn-primary" id="generate">Generate portfolio</button>
+      <div class="live-preview" id="livePreview" aria-live="polite"><div class="lp wide">Loading portfolio&hellip;</div></div>
+      <button class="btn-primary" id="seeResults" type="button">See the full breakdown &darr;</button>
       <p class="console-note">Academic model — not financial advice.</p>
     </div>
   </div>
@@ -97,6 +100,13 @@
 
 <!-- results -->
 <main class="results" id="results" hidden>
+
+  <!-- sticky controls: stay on screen while you scroll the results -->
+  <div class="dock" id="dock">
+    <label class="dk"><span>Amount</span><input type="range" data-ctl="amount" min="0" max="1000" value="333" aria-label="Amount to invest"><b data-out="amount">$10,000</b></label>
+    <label class="dk"><span>Risk</span><input type="range" data-ctl="risk" min="0" max="2" step="1" value="1" aria-label="Risk appetite"><b data-out="risk">Medium</b></label>
+    <label class="dk"><span>Horizon</span><input type="range" data-ctl="horizon" min="5" max="250" step="5" value="60" aria-label="Forecast horizon"><b data-out="horizon">60 days</b></label>
+  </div>
 
   <!-- recommendation -->
   <section class="block">
