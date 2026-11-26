@@ -52,7 +52,10 @@ async function generate(){
 /* ---------- render ---------- */
 function renderAll(d){
   const inp = d.inputs;
-  $("#recSub").textContent = `${inp.risk}-risk · ${money(inp.amount)} · ${inp.horizon}-day horizon · as of ${d.as_of}`;
+  const lv = d.live || {};
+  $("#recSub").textContent = `${inp.risk}-risk · ${money(inp.amount)} · ${inp.horizon}-day horizon · `
+    + (lv.active ? `live prices${lv.prices_as_of ? " (close " + lv.prices_as_of + ")" : ""} · model data as of ${d.as_of}`
+                 : `as of ${d.as_of}`);
 
   // recommendation stats
   $("#recStats").innerHTML = stat(money(inp.amount),"You invest","accent")
@@ -61,9 +64,10 @@ function renderAll(d){
     + stat(money(d.cash_left),"Cash left over","accent");
 
   // holdings table
-  let h = "<thead><tr><th>Ticker</th><th>Weight</th><th>Allocation</th><th>Shares</th><th>Price</th><th>Score</th></tr></thead><tbody>";
+  const priceHead = (d.live && d.live.active) ? "Live price" : "Price";
+  let h = "<thead><tr><th>Ticker</th><th>Weight</th><th>Allocation</th><th>Shares</th><th>" + priceHead + "</th><th>Score</th></tr></thead><tbody>";
   d.holdings.forEach(x=>{ h += `<tr><td class="tkr">${x.ticker}</td><td>${(x.weight*100).toFixed(1)}%</td>`
-    + `<td>${money(x.allocation)}</td><td>${x.shares}</td><td>$${x.price.toFixed(2)}</td><td>${x.score.toFixed(3)}</td></tr>`; });
+    + `<td>${money(x.allocation)}</td><td>${x.shares}</td><td>$${x.price.toFixed(2)}${driftTag(x)}</td><td>${x.score.toFixed(3)}</td></tr>`; });
   $("#holdings").innerHTML = h + "</tbody>";
 
   drawAllocation(d.holdings);
@@ -211,3 +215,72 @@ async function loadBacktest(){
 
 loadBacktest();
 loadSaved();
+
+/* ---------- live market strip ---------- */
+function driftTag(x){
+  if(!x.model_price || Math.abs(x.price - x.model_price) < 0.005) return "";
+  const dr = x.price / x.model_price - 1;
+  return `<span class="drift ${dr>=0?"pos":"neg"}" title="Change vs. the price in the saved model data">${pct(dr)}</span>`;
+}
+
+function spark(vals, up){
+  if(!vals || vals.length < 2) return "";
+  const w=54, h=20, mn=Math.min(...vals), mx=Math.max(...vals), rng=(mx-mn)||1;
+  const pts = vals.map((v,i)=>`${(i/(vals.length-1)*w).toFixed(1)},${(h-2-((v-mn)/rng)*(h-4)).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${up?"#34D399":"#F87171"}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+function ago(sec){
+  if(sec == null) return "";
+  if(sec < 90) return "just now";
+  if(sec < 5400) return Math.round(sec/60) + " min ago";
+  if(sec < 172800) return Math.round(sec/3600) + " h ago";
+  return Math.round(sec/86400) + " days ago";
+}
+
+let marketTimer = null, marketTries = 0;
+async function loadMarket(){
+  const box = $("#ticker"); if(!box) return;
+  let m = null;
+  try{ const r = await fetch("/api/market", {cache:"no-store"}); if(r.ok) m = await r.json(); }catch(e){}
+  if(!m){ box.className = "ticker offline"; $("#tickerStatusText").textContent = "Market feed unreachable"; return schedule(60000); }
+
+  box.className = "ticker " + m.status;
+  const label = {
+    live:    `Live · updated ${ago(m.age_seconds)}`,
+    closed:  `Market closed · last update ${ago(m.age_seconds)}`,
+    stale:   `Delayed · last update ${ago(m.age_seconds)}`,
+    loading: "Fetching live prices…",
+    offline: "Live feed unavailable · showing saved data",
+    off:     "Live data turned off"
+  }[m.status] || "";
+  $("#tickerStatusText").textContent = label;
+
+  const track = $("#tickerTrack");
+  if(m.indices && m.indices.length){
+    track.innerHTML = m.indices.map(i=>{
+      const up = i.pct >= 0;
+      return `<div class="tk"><span class="tk-name">${i.name}</span>`
+        + `<span class="tk-px">${i.price.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`
+        + `<span class="tk-chg ${up?"up":"down"}">${up?"▲":"▼"} ${Math.abs(i.pct).toFixed(2)}%</span>${spark(i.spark, up)}</div>`;
+    }).join("");
+  } else if(m.status === "loading"){
+    track.innerHTML = '<div class="tk-skel"></div><div class="tk-skel"></div><div class="tk-skel"></div>';
+  } else {
+    track.innerHTML = "";
+  }
+
+  const pf = $("#priceFreshness");
+  if(pf){
+    pf.innerHTML = m.prices_count > 0
+      ? `stock prices are live${m.prices_date ? " (latest close " + m.prices_date + ")" : ""}<span class="live-note">LIVE</span>`
+      : "prices update live when the market feed is available";
+  }
+
+  // first load on a cold server: poll quickly until data arrives, then every minute
+  if(m.status === "loading" && marketTries++ < 12) return schedule(4000);
+  schedule(m.market_open ? 60000 : 300000);
+}
+function schedule(ms){ clearTimeout(marketTimer); marketTimer = setTimeout(()=>{ if(!document.hidden) loadMarket(); else schedule(ms); }, ms); }
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) loadMarket(); });
+loadMarket();
