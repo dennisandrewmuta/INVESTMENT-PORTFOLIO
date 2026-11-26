@@ -21,13 +21,25 @@ from sqlalchemy import (create_engine, MetaData, Table, Column, Integer, String,
                         Float, DateTime, ForeignKey, select, insert, delete)
 
 # ---- pick the database from the environment ----
-url = os.environ.get("DATABASE_URL", "sqlite:///portfolio_web.db")
-# some hosts hand out the old-style "postgres://" prefix; SQLAlchemy wants "postgresql://"
+SQLITE_URL = "sqlite:///portfolio_web.db"
+url = os.environ.get("DATABASE_URL", "").strip() or SQLITE_URL
 if url.startswith("postgres://"):
     url = url.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(url, pool_pre_ping=True,
-                       connect_args={"check_same_thread": False} if url.startswith("sqlite") else {})
+
+def _make_engine(u):
+    return create_engine(
+        u, pool_pre_ping=True,
+        connect_args={"check_same_thread": False} if u.startswith("sqlite") else {})
+
+
+try:
+    engine = _make_engine(url)
+    with engine.connect():
+        pass
+except Exception as exc:  # missing driver, dead database, bad URL...
+    print("Database unavailable (%s) - falling back to SQLite" % exc)
+    engine = _make_engine(SQLITE_URL)
 meta = MetaData()
 
 portfolios = Table(
