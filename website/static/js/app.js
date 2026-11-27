@@ -75,13 +75,13 @@ function compute(P, amount, horizon){
   const holdings = P.holdings.map((x) => {
     const allocation = x.weight * amount;
     return { ticker:x.ticker, weight:x.weight, allocation, shares:Math.floor(allocation / x.price),
-             price:x.price, score:x.score, model_price:x.model_price };
+             price:x.price, score:x.score, model_price:x.model_price, why:x.why };
   });
   const invested = holdings.reduce((s, x) => s + x.shares * x.price, 0);
   const b = P.bands, scale = (arr) => arr.slice(0, h + 1).map((v) => v * amount);
   const hist = histFromQuantiles(P.q[P.hz.indexOf(h)], amount, P.n_sims);
   return {
-    as_of:P.as_of, live:P.live,
+    as_of:P.as_of, live:P.live, explain:P.explain, benchmark:!!P.benchmark,
     inputs:{ amount, risk:P.risk, horizon:h },
     invested, cash_left:amount - invested, n_stocks:P.n_stocks, holdings,
     risk:P.metrics,
@@ -192,7 +192,7 @@ function renderAll(d){
   // holdings table
   const priceHead = (d.live && d.live.active) ? "Live price" : "Price";
   let h = "<thead><tr><th>Ticker</th><th>Weight</th><th>Allocation</th><th>Shares</th><th>" + priceHead + "</th><th>Score</th></tr></thead><tbody>";
-  d.holdings.forEach(x=>{ h += `<tr><td class="tkr">${x.ticker}</td><td>${(x.weight*100).toFixed(1)}%</td>`
+  d.holdings.forEach(x=>{ h += `<tr><td class="tkr"><button type="button" class="tk-link" data-why="${x.ticker}" title="Why was this picked?">${x.ticker}</button></td><td>${(x.weight*100).toFixed(1)}%</td>`
     + `<td>${money(x.allocation)}</td><td>${x.shares}</td><td>$${x.price.toFixed(2)}${driftTag(x)}</td><td>${x.score.toFixed(3)}</td></tr>`; });
   $("#holdings").innerHTML = h + "</tbody>";
 
@@ -221,6 +221,8 @@ function renderAll(d){
   drawHist(f);
 
   renderConclusion(d);
+  renderWhy(d);
+  renderCompare();
 }
 
 function stat(v,l,cls=""){ return `<div class="stat"><div class="v num ${cls}">${v}</div><div class="l">${l}</div></div>`; }
@@ -299,18 +301,7 @@ async function loadSaved(){
   const res = await fetch("/api/saved"); renderSaved(await res.json());
 }
 
-function renderSaved(rows){
-  const t = $("#savedTable");
-  if(!rows || !rows.length){ t.innerHTML = ""; t.insertAdjacentHTML("afterend",""); 
-    t.innerHTML = "<tbody><tr><td class='empty' colspan='8'>No saved portfolios yet — generate one and click “Save this portfolio”.</td></tr></tbody>"; return; }
-  let h = "<thead><tr><th>Label</th><th>Risk</th><th>Amount</th><th>Vol</th><th>Return</th><th>Sharpe</th><th>P(profit)</th><th>Stocks</th></tr></thead><tbody>";
-  rows.forEach(r=>{ h += `<tr><td>${r.label}</td><td>${r.risk}</td><td>${money(r.amount)}</td>`
-    + `<td>${(r.annual_vol*100).toFixed(1)}%</td>`
-    + `<td class="${r.expected_return>=0?'pos':'neg'}">${pct(r.expected_return)}</td>`
-    + `<td class="${r.sharpe>=0?'pos':'neg'}">${r.sharpe.toFixed(2)}</td>`
-    + `<td>${pctFlat(r.prob_profit)}</td><td>${r.n_stocks}</td></tr>`; });
-  t.innerHTML = h + "</tbody>";
-}
+/* renderSaved() lives in the compare section below */
 
 async function clearSaved(){
   await fetch("/api/clear",{method:"POST"}); renderSaved([]);
@@ -405,7 +396,259 @@ function schedule(ms){ clearTimeout(marketTimer); marketTimer = setTimeout(()=>{
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) loadMarket(); });
 loadMarket();
 
+
+/* =====================================================================
+   WHY THESE PICKS — what pushed each stock's score up or down
+   ===================================================================== */
+const FEAT_FMT = {
+  ret_1:(v)=>pct(v), ret_5:(v)=>pct(v), ret_21:(v)=>pct(v), mom_63:(v)=>pct(v),
+  px_sma20:(v)=>Math.abs((v-1)*100).toFixed(1)+"% "+(v>=1?"above":"below")+" its 20-day average",
+  px_sma50:(v)=>Math.abs((v-1)*100).toFixed(1)+"% "+(v>=1?"above":"below")+" its 50-day average",
+  vol_21:(v)=>(v*100).toFixed(1)+"% daily swings", rsi_14:(v)=>"RSI "+v.toFixed(0), volume_ratio:(v)=>v.toFixed(1)+"× normal volume"
+};
+const fmtFeat = (k, v) => (FEAT_FMT[k] ? FEAT_FMT[k](v) : String(v));
+function pctText(p){
+  if(p <= 33) return "lowest " + Math.max(1, Math.round(p)) + "% of stocks";
+  if(p >= 67) return "top " + Math.max(1, Math.round(100 - p)) + "% of stocks";
+  return "mid-range";
+}
+const signed = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(3);
+
+function renderWhy(d){
+  const sec = $("#why");
+  const hasWhy = !d.benchmark && d.explain && d.holdings.length && d.holdings[0].why;
+  sec.hidden = !hasWhy;
+  if(!hasWhy) return;
+
+  if(!d.holdings.some((h) => h.ticker === state.whyTicker)) state.whyTicker = d.holdings[0].ticker;
+  const h = d.holdings.find((x) => x.ticker === state.whyTicker), w = h.why, ex = d.explain;
+  const label = Object.fromEntries(ex.features.map((f) => [f.key, f.label]));
+  const desc  = Object.fromEntries(ex.features.map((f) => [f.key, f.desc]));
+  const keys = ex.features.map((f) => f.key);
+
+  // chips: every holding, biggest first
+  $("#whyChips").innerHTML = d.holdings.map((x) =>
+    `<button type="button" class="chip${x.ticker === h.ticker ? " on" : ""}" data-why="${x.ticker}">${x.ticker}</button>`).join("");
+
+  $("#whySub").textContent = `${d.n_stocks} stocks in this ${d.inputs.risk.toLowerCase()}-risk portfolio. `
+    + `Click any one to see what the model saw (data as of ${ex.as_of}).`;
+  $("#whyHead").innerHTML = `<span class="t">${h.ticker}</span>`
+    + `<span class="m">rank #${w.rank} of ${ex.n_stocks} · score ${h.score.toFixed(3)} (typical stock ${ex.typical_score.toFixed(3)})</span>`;
+
+  // plain-English drivers: the three biggest pushes
+  const ranked = keys.slice().sort((a, b) => Math.abs(w.push[b]) - Math.abs(w.push[a]));
+  $("#whySentences").innerHTML = ranked.slice(0, 3).filter((k) => Math.abs(w.push[k]) >= 0.001).map((k) => {
+    const up = w.push[k] >= 0;
+    return `<li class="${up ? "up" : "down"}"><b>${label[k]}</b>: ${fmtFeat(k, w.val[k])} (${pctText(w.pct[k])}) `
+      + `${up ? "raised" : "lowered"} its score by <span class="amt">${signed(Math.abs(w.push[k]))}</span>.</li>`;
+  }).join("") || "<li>No single feature stands out for this stock.</li>";
+
+  // chart of pushes, biggest first
+  upsert("why", $("#whyChart"), {type:"bar",
+    data:{labels:ranked.map((k) => label[k]), datasets:[{data:ranked.map((k) => w.push[k]),
+      backgroundColor:ranked.map((k) => w.push[k] >= 0 ? C.green : C.red), borderRadius:3}]},
+    options:{indexAxis:"y", plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c) => ` ${signed(c.raw)} score points`}}},
+      scales:{x:{grid:{color:C.line}, title:{display:true, text:"← lowers score · raises score →", font:{size:10}}}, y:{grid:{display:false}}}}});
+
+  // numbers table
+  $("#whyTable").innerHTML = "<thead><tr><th>Feature</th><th>Value</th><th>Rank among stocks</th><th>Push</th></tr></thead><tbody>"
+    + ranked.map((k) => `<tr title="${desc[k]}"><td>${label[k]}</td><td>${fmtFeat(k, w.val[k])}</td>`
+      + `<td><span class="pbar"><i style="width:${w.pct[k]}%"></i></span>${Math.round(w.pct[k])}</td>`
+      + `<td class="${w.push[k] >= 0 ? "pos" : "neg"}">${signed(w.push[k])}</td></tr>`).join("") + "</tbody>";
+
+  // overall importance (real, from training)
+  const gi = Object.entries(ex.global_importance || {}).sort((a, b) => b[1] - a[1]);
+  if(gi.length){
+    upsert("imp", $("#impChart"), {type:"bar",
+      data:{labels:gi.map(([k]) => label[k] || k), datasets:[{data:gi.map(([, v]) => v),
+        backgroundColor:gi.map(([, v]) => v > 0 ? C.navy : "#CBD5E1"), borderRadius:3}]},
+      options:{indexAxis:"y", plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c) => ` ${c.raw.toFixed(4)} AUC lost when shuffled`}}},
+        scales:{x:{grid:{color:C.line}, title:{display:true, text:"importance (grey = no reliable signal)", font:{size:10}}}, y:{grid:{display:false}}}}});
+  }
+
+  const exact = ex.method === "model";
+  $("#whyNote").innerHTML = exact
+    ? "<strong>How to read this:</strong> each bar is how much the trained model's score for this stock changes when that one feature is swapped for the typical stock's value."
+    : `<strong>How to read this:</strong> each bar is how much a stand-in model's score for this stock changes when that one feature is swapped for the typical stock's value. `
+      + `The stand-in was fitted to reproduce the real model's saved scores (it matches them with R² ${ex.r2 != null ? ex.r2.toFixed(2) : "–"}; the volume feature is not in the saved data), `
+      + `so treat this as a faithful sketch of the model's tendencies, not its exact internals.`;
+  $("#whyNote").innerHTML += ` On its own the model is right only about half the time per stock — its value shows up when ranking many stocks together (see <a href="#model">the backtest</a>).`;
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-why]"); if(!b) return;
+  state.whyTicker = b.dataset.why;
+  if(state.lastPortfolio) renderWhy(state.lastPortfolio);
+  if(b.classList.contains("tk-link")) $("#why").scrollIntoView({behavior:"smooth", block:"start"});
+});
+
+/* =====================================================================
+   COMPARE — Low vs Medium vs High vs the market, and saved portfolios
+   ===================================================================== */
+const CMP = {
+  Low:    { name:"Low risk",          color:"#4A6FA5" },
+  Medium: { name:"Medium risk",       color:"#0FB981" },
+  High:   { name:"High risk",         color:"#F59E0B" },
+  Market: { name:"S&P 500 universe",  color:"#64748B" }
+};
+state.cmpSel = new Set(["Low", "Medium", "High", "Market"]);
+state.savedSel = new Set();
+state.savedRows = [];
+
+function bestIndex(vals, dir){                  // dir: "high" | "low"
+  const ok = vals.map((v, i) => [v, i]).filter(([v]) => Number.isFinite(v));
+  if(ok.length < 2) return -1;
+  return ok.reduce((a, b) => (dir === "high" ? (b[0] > a[0] ? b : a) : (b[0] < a[0] ? b : a)))[1];
+}
+function tableRows(cols, spec){                // cols: [{head, vals:{key:value}}]; spec: [label, key, fmt, dir]
+  return spec.map(([label, key, fmt, dir]) => {
+    if(label.startsWith("--")) return `<tr><td class="sep" colspan="${cols.length + 1}">${label.slice(2)}</td></tr>`;
+    const vals = cols.map((c) => c.vals[key]);
+    const best = dir ? bestIndex(vals, dir) : -1;
+    return `<tr><td>${label}</td>` + cols.map((c, i) =>
+      `<td class="${i === best ? "best" : ""}">${vals[i] == null ? "–" : fmt(vals[i])}</td>`).join("") + "</tr>";
+  }).join("");
+}
+
+function renderCompare(){
+  const keys = Object.keys(CMP).filter((k) => state.cmpSel.has(k));
+  $$("#cmpChips .chip").forEach((c) => c.classList.toggle("on", state.cmpSel.has(c.dataset.cmp)));
+  const missing = keys.filter((k) => !state.profiles[k]);
+  missing.forEach((k) => loadProfile(k).then(scheduleUpdate).catch(() => {}));
+  const cols = keys.filter((k) => state.profiles[k]).map((k) => {
+    const d = compute(state.profiles[k], state.amount, state.horizon);
+    return { key:k, d, head:CMP[k].name, vals:{
+      n:k === "Market" ? null : d.n_stocks, vol:d.risk.annual_vol, ret:d.risk.annual_return, sharpe:d.risk.sharpe,
+      dd:d.risk.max_drawdown, ev:d.forecast.expected_value, er:d.forecast.expected_return, prob:d.forecast.prob_profit,
+      worst:d.forecast.worst_case, best:d.forecast.best_case } };
+  });
+  const yours = RISKS[state.riskIdx];
+  $("#cmpSub").textContent = `${money(state.amount)} over ${state.horizon} trading days. Move the sliders and every portfolio re-runs at once.`
+    + (missing.length ? " Loading " + missing.map((k) => CMP[k].name).join(", ") + "…" : "");
+  if(!cols.length){ $("#cmpTable").innerHTML = ""; return; }
+
+  const spec = [
+    ["--Past behaviour (last 2 years)"],
+    ["Annual volatility", "vol", (v) => (v*100).toFixed(1) + "%", "low"],
+    ["Annual return", "ret", pct, "high"],
+    ["Sharpe ratio", "sharpe", (v) => v.toFixed(2), "high"],
+    ["Worst drawdown", "dd", (v) => (v*100).toFixed(1) + "%", "high"],
+    ["--Forecast"],
+    ["Expected value", "ev", money, "high"],
+    ["Expected return", "er", pct, "high"],
+    ["Chance of profit", "prob", pctFlat, "high"],
+    ["Worst case (5%)", "worst", money, "high"],
+    ["Best case (95%)", "best", money, "high"],
+    ["--Makeup"],
+    ["Stocks held", "n", (v) => v, null]
+  ];
+  $("#cmpTable").innerHTML = "<thead><tr><th></th>" + cols.map((c) =>
+      `<th><i style="background:${CMP[c.key].color}"></i>${c.head}${c.key === yours ? '<span class="yours">● your current setting</span>' : ""}</th>`).join("")
+    + "</tr></thead><tbody>" + tableRows(cols, spec) + "</tbody>";
+
+  // overlap between held stocks
+  const held = cols.filter((c) => c.key !== "Market").map((c) => [c.head, new Set(c.d.holdings.map((h) => h.ticker))]);
+  const lines = [];
+  for(let i = 0; i < held.length; i++) for(let j = i + 1; j < held.length; j++){
+    const common = [...held[i][1]].filter((t) => held[j][1].has(t));
+    if(common.length) lines.push(`${held[i][0]} & ${held[j][0]}: ${common.length} in common (${common.slice(0, 6).join(", ")}${common.length > 6 ? "…" : ""})`);
+  }
+  $("#cmpOverlap").textContent = held.length > 1 ? (lines.length ? "Shared holdings — " + lines.join(" · ") : "These portfolios hold no stocks in common.") : "";
+
+  // expected path
+  const maxLen = Math.max(...cols.map((c) => c.d.forecast.days.length));
+  upsert("cmpPath", $("#cmpPath"), {type:"line",
+    data:{labels:cols.find((c) => c.d.forecast.days.length === maxLen).d.forecast.days,
+      datasets:cols.map((c) => ({label:c.head, data:c.d.forecast.p50, borderColor:CMP[c.key].color, borderWidth:c.key === "Market" ? 2 : 2.5,
+        borderDash:c.key === "Market" ? [6, 4] : [], pointRadius:0, tension:.1}))},
+    options:{interaction:{mode:"index", intersect:false}, plugins:{legend:{labels:{boxWidth:12, font:{size:10}}},
+      tooltip:{callbacks:{label:(c) => ` ${c.dataset.label}: ${money(c.raw)}`}}},
+      scales:{x:{title:{display:true, text:"trading days", font:{size:10}}, grid:{display:false}, ticks:{maxTicksLimit:8}},
+        y:{ticks:{callback:(v) => "$" + (v/1000).toFixed(1) + "k"}, grid:{color:C.line}}}}});
+
+  // range of outcomes: floating bars worst..best with the expected value marked
+  upsert("cmpRange", $("#cmpRange"), {type:"bar",
+    data:{labels:cols.map((c) => c.head), datasets:[
+      {type:"bar", label:"Worst 5% to best 95%", data:cols.map((c) => [c.d.forecast.worst_case, c.d.forecast.best_case]),
+        backgroundColor:cols.map((c) => CMP[c.key].color + "66"), borderColor:cols.map((c) => CMP[c.key].color), borderWidth:1.5, borderRadius:4},
+      {type:"line", label:"Expected", data:cols.map((c) => c.d.forecast.expected_value), showLine:false,
+        pointStyle:"rectRot", pointRadius:6, pointBackgroundColor:"#0B2545", pointBorderColor:"#fff"}]},
+    options:{plugins:{legend:{labels:{boxWidth:12, font:{size:10}}},
+      tooltip:{callbacks:{label:(c) => Array.isArray(c.raw) ? ` ${money(c.raw[0])} to ${money(c.raw[1])}` : ` Expected ${money(c.raw)}`}}},
+      scales:{x:{grid:{display:false}}, y:{ticks:{callback:(v) => "$" + (v/1000).toFixed(1) + "k"}, grid:{color:C.line}}}}});
+
+  // the past two years (right-aligned so different lengths still line up)
+  const n = Math.max(...cols.map((c) => c.d.value_curve.length));
+  upsert("cmpPast", $("#cmpPast"), {type:"line",
+    data:{labels:Array.from({length:n}, (_, i) => i),
+      datasets:cols.map((c) => ({label:c.head, data:Array(n - c.d.value_curve.length).fill(null).concat(c.d.value_curve),
+        borderColor:CMP[c.key].color, borderWidth:c.key === "Market" ? 2 : 2.2, borderDash:c.key === "Market" ? [6, 4] : [], pointRadius:0, tension:.1}))},
+    options:{interaction:{mode:"index", intersect:false}, plugins:{legend:{labels:{boxWidth:12, font:{size:10}}},
+      tooltip:{callbacks:{label:(c) => ` ${c.dataset.label}: ${money(c.raw)}`}}},
+      scales:{x:{display:false}, y:{ticks:{callback:(v) => "$" + (v/1000).toFixed(0) + "k"}, grid:{color:C.line}}}}});
+}
+
+$("#cmpChips").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-cmp]"); if(!b) return;
+  const k = b.dataset.cmp;
+  if(state.cmpSel.has(k)){ if(state.cmpSel.size > 1) state.cmpSel.delete(k); } else state.cmpSel.add(k);
+  renderCompare();
+});
+
+/* ---------- saved portfolios: pick two or more and compare ---------- */
+function renderSaved(rows){
+  state.savedRows = rows || [];
+  const ids = new Set(state.savedRows.map((r) => r.id));
+  state.savedSel = new Set([...state.savedSel].filter((i) => ids.has(i)));
+  const t = $("#savedTable");
+  if(!state.savedRows.length){
+    t.innerHTML = "<tbody><tr><td class='empty' colspan='9'>No saved portfolios yet — build one with the sliders and click “Save this portfolio”.</td></tr></tbody>";
+    return renderSavedCompare();
+  }
+  let h = "<thead><tr><th class='sel'></th><th>Label</th><th>Risk</th><th>Amount</th><th>Vol</th><th>Return</th><th>Sharpe</th><th>P(profit)</th><th>Stocks</th></tr></thead><tbody>";
+  state.savedRows.forEach((r) => { h += `<tr><td class="sel"><input type="checkbox" data-saved="${r.id}" aria-label="Compare ${r.label}"${state.savedSel.has(r.id) ? " checked" : ""}></td>`
+    + `<td>${r.label}</td><td>${r.risk}</td><td>${money(r.amount)}</td>`
+    + `<td>${(r.annual_vol*100).toFixed(1)}%</td>`
+    + `<td class="${r.expected_return>=0?'pos':'neg'}">${pct(r.expected_return)}</td>`
+    + `<td class="${r.sharpe>=0?'pos':'neg'}">${r.sharpe.toFixed(2)}</td>`
+    + `<td>${pctFlat(r.prob_profit)}</td><td>${r.n_stocks}</td></tr>`; });
+  t.innerHTML = h + "</tbody>";
+  renderSavedCompare();
+}
+$("#savedTable").addEventListener("change", (e) => {
+  const c = e.target.closest("[data-saved]"); if(!c) return;
+  const id = +c.dataset.saved;
+  if(c.checked){ if(state.savedSel.size >= 4){ c.checked = false; return; } state.savedSel.add(id); } else state.savedSel.delete(id);
+  renderSavedCompare();
+});
+function renderSavedCompare(){
+  const picked = state.savedRows.filter((r) => state.savedSel.has(r.id));
+  const box = $("#savedCmp"), hint = $("#savedHint");
+  box.hidden = picked.length < 2;
+  hint.textContent = picked.length < 2 ? "Tick two or more saved portfolios (up to 4) to compare them side by side." : "";
+  if(picked.length < 2) return;
+  const cols = picked.map((r) => ({ head:"#" + r.id + " · " + r.label, vals:r }));
+  const spec = [
+    ["--Setup"],
+    ["Risk appetite", "risk", (v) => v, null],
+    ["Amount", "amount", money, null],
+    ["Horizon (days)", "horizon", (v) => v, null],
+    ["Stocks held", "n_stocks", (v) => v, null],
+    ["--Past behaviour"],
+    ["Annual volatility", "annual_vol", (v) => (v*100).toFixed(1) + "%", "low"],
+    ["Annual return", "annual_return", pct, "high"],
+    ["Sharpe ratio", "sharpe", (v) => v.toFixed(2), "high"],
+    ["Worst drawdown", "max_drawdown", (v) => (v*100).toFixed(1) + "%", "high"],
+    ["--Forecast"],
+    ["Expected return", "expected_return", pct, "high"],
+    ["Chance of profit", "prob_profit", pctFlat, "high"],
+    ["Worst case (5%)", "worst_case", money, null],
+    ["Best case (95%)", "best_case", money, null]
+  ];
+  $("#savedCmpTable").innerHTML = "<thead><tr><th></th>" + cols.map((c) => `<th>${c.head}</th>`).join("") + "</tr></thead><tbody>" + tableRows(cols, spec) + "</tbody>";
+}
+
 /* ---------- start ---------- */
 syncUI();
-loadProfile("Medium").then(() => { scheduleUpdate(); setTimeout(() => { loadProfile("Low").catch(()=>{}); loadProfile("High").catch(()=>{}); }, 600); })
+loadProfile("Medium").then(() => { scheduleUpdate(); setTimeout(() => { ["Low","High","Market"].forEach((k) => loadProfile(k).then(scheduleUpdate).catch(()=>{})); }, 600); })
   .catch(() => { $("#livePreview").innerHTML = '<div class="lp wide">Could not reach the server — retrying…</div>'; setTimeout(() => location.reload(), 5000); });
