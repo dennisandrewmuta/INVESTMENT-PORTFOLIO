@@ -43,7 +43,7 @@ six tabs:
 - **Conclusion** — an auto-written summary tying it all together.
 - **Stock Lookup** and **Model Backtest** — supporting evidence.
 
-### Design point for your defense
+### Design point 
 
 The system deliberately separates two jobs: the **ML model selects stocks** (over
 its fixed 21-day training horizon), while a **Monte Carlo simulation forecasts the
@@ -182,7 +182,7 @@ and only shows up across a whole basket over many periods — never bet on a sin
 prediction. Real deployment would also need transaction costs, slippage,
 survivorship-bias checks, and risk controls.
 
-## Ideas to extend it (good for extra marks)
+## Ideas to extend it
 
 - Add **risk-based weighting** (e.g. inverse-volatility) in `predict.py`.
 - Compare models: swap `HistGradientBoostingClassifier` for `RandomForest` or
