@@ -62,8 +62,8 @@ def api_market():
 @app.route("/api/profile")
 def api_profile():
     risk = str(request.args.get("risk", "Medium")).title()
-    if risk not in RISKS:
-        return jsonify(error="Risk must be Low, Medium, or High."), 400
+    if risk not in RISKS and risk != "Market":
+        return jsonify(error="Risk must be Low, Medium, High, or Market."), 400
     resp = jsonify(web_service.build_profile(risk))
     resp.headers["Cache-Control"] = "no-store"
     return resp

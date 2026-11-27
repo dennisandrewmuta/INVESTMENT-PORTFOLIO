@@ -30,7 +30,7 @@ import web_db
 import market_data
 
 DATA = os.path.join(HERE, "data")
-_STATE = {"scores": None, "returns": None, "backtest": None, "as_of": None, "mode": None}
+_STATE = {"scores": None, "returns": None, "backtest": None, "as_of": None, "mode": None, "explain": None}
 
 
 def boot():
@@ -50,6 +50,10 @@ def _boot_bundle():
         _STATE["backtest"] = json.load(f)
     with open(os.path.join(DATA, "meta.json")) as f:
         _STATE["as_of"] = json.load(f)["as_of"]
+    ex = os.path.join(DATA, "explain.json")           # optional: "why was it ranked" data
+    if os.path.exists(ex):
+        with open(ex, encoding="utf-8") as f:
+            _STATE["explain"] = json.load(f)
     _STATE["mode"] = "bundle"
     print(f"[web_service] BUNDLE mode — {len(_STATE['scores'])} stocks, as of {_STATE['as_of']}")
 
@@ -162,8 +166,15 @@ def _unit_profile(risk):
     """Heavy, price-independent part. Cached for the life of the process."""
     if risk in _PROFILE_CACHE:
         return _PROFILE_CACHE[risk]
-    picks = pe.apply_risk_profile(_STATE["scores"], risk)
-    port_ret = pe.portfolio_returns(picks, _STATE["returns"])
+    if risk == "Market":
+        # benchmark: the whole S&P 500 universe, equal-weighted (same data, same method)
+        wide = _STATE["returns"].pivot(index="Date", columns="Ticker", values="ret_1").sort_index()
+        port_ret = wide.mean(axis=1).dropna().tail(504)
+        tickers = []
+    else:
+        picks = pe.apply_risk_profile(_STATE["scores"], risk)
+        port_ret = pe.portfolio_returns(picks, _STATE["returns"])
+        tickers = picks[["Ticker", "weight", "score"]].to_dict("records")
     m = pe.risk_metrics(port_ret)
     band, note = pe.classify_realized_risk(m["annual_vol"])
 
@@ -183,7 +194,7 @@ def _unit_profile(risk):
         return [round(float(v), n) for v in a]
 
     prof = {
-        "tickers": picks[["Ticker", "weight", "score"]].to_dict("records"),
+        "tickers": tickers,
         "metrics": {"annual_vol": _f(m["annual_vol"]), "annual_return": _f(m["annual_return"]),
                     "sharpe": _f(m["sharpe"]), "max_drawdown": _f(m["max_drawdown"]),
                     "band": band, "band_note": note},
@@ -204,10 +215,23 @@ def build_profile(risk):
     scores, live = _scores_with_live_prices()
     price = dict(zip(scores["Ticker"], scores["Adj Close"]))
     model = dict(zip(scores["Ticker"], scores["model_price"])) if "model_price" in scores.columns else price
-    holdings = [{"ticker": t["Ticker"], "weight": float(t["weight"]), "score": float(t["score"]),
-                 "price": float(price[t["Ticker"]]), "model_price": float(model[t["Ticker"]])}
-                for t in prof["tickers"]]
-    return {"risk": risk, "as_of": _STATE["as_of"], "live": live, "n_stocks": len(holdings),
+    ex = _STATE.get("explain")
+    holdings = []
+    for t in prof["tickers"]:
+        h = {"ticker": t["Ticker"], "weight": float(t["weight"]), "score": float(t["score"]),
+             "price": float(price[t["Ticker"]]), "model_price": float(model[t["Ticker"]])}
+        if ex and t["Ticker"] in ex["stocks"]:
+            w = ex["stocks"][t["Ticker"]]
+            h["why"] = {"rank": w["rank"], "val": w["val"], "pct": w["pct"], "push": w["push"]}
+        holdings.append(h)
+    meta = None
+    if ex:
+        meta = {"method": ex["method"], "r2": ex["r2"], "as_of": ex["as_of"], "features": ex["features"],
+                "typical_score": ex["typical_score"], "n_stocks": ex["n_stocks"],
+                "global_importance": ex["global_importance"]}
+    return {"risk": risk, "as_of": _STATE["as_of"], "live": live,
+            "benchmark": risk == "Market", "explain": meta,
+            "n_stocks": len(_STATE["scores"]) if risk == "Market" else len(holdings),
             "holdings": holdings, "metrics": prof["metrics"], "curve": prof["curve"],
             "bands": prof["bands"], "prob": prof["prob"], "hz": prof["hz"], "q": prof["q"],
             "n_sims": prof["n_sims"], "hz_max": HZ_MAX}
