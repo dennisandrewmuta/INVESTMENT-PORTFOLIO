@@ -133,6 +133,35 @@
     </div>
   </section>
 
+  <!-- why these picks -->
+  <section class="block" id="why" hidden>
+    <div class="block-head"><h2>Why these picks?</h2>
+      <p class="block-sub" id="whySub">Click any stock to see what pushed the model&rsquo;s score for it up or down.</p></div>
+    <div class="split why-split">
+      <div class="card">
+        <div class="card-title">Pick a stock</div>
+        <div class="chips" id="whyChips"></div>
+        <div class="why-head" id="whyHead"></div>
+        <ul class="why-sentences" id="whySentences"></ul>
+      </div>
+      <div class="card chart-card">
+        <div class="card-title">What pushed its score <span class="hint">vs. a typical stock</span></div>
+        <canvas id="whyChart"></canvas>
+      </div>
+    </div>
+    <div class="split why-split" style="margin-top:1.2rem">
+      <div class="card table-card">
+        <div class="card-title">The numbers behind it</div>
+        <div class="table-scroll"><table class="why-table" id="whyTable"></table></div>
+      </div>
+      <div class="card chart-card">
+        <div class="card-title">What the model leans on overall <span class="hint">from training</span></div>
+        <canvas id="impChart"></canvas>
+      </div>
+    </div>
+    <p class="why-note" id="whyNote"></p>
+  </section>
+
   <!-- risk -->
   <section class="block">
     <div class="block-head"><h2>Risk analysis</h2>
@@ -162,6 +191,36 @@
     </div>
   </section>
 
+  <!-- compare -->
+  <section class="block" id="compare">
+    <div class="block-head"><h2>Compare portfolios</h2>
+      <p class="block-sub" id="cmpSub"></p></div>
+    <div class="chips cmp-chips" id="cmpChips" role="group" aria-label="Portfolios to compare">
+      <button type="button" class="chip on" data-cmp="Low"><i style="background:#4A6FA5"></i>Low risk</button>
+      <button type="button" class="chip on" data-cmp="Medium"><i style="background:#0FB981"></i>Medium risk</button>
+      <button type="button" class="chip on" data-cmp="High"><i style="background:#F59E0B"></i>High risk</button>
+      <button type="button" class="chip on" data-cmp="Market"><i style="background:#64748B"></i>S&amp;P 500 universe</button>
+    </div>
+    <div class="card table-card">
+      <div class="table-scroll"><table class="cmp" id="cmpTable"></table></div>
+    </div>
+    <p class="cmp-note" id="cmpOverlap"></p>
+    <div class="split" style="margin-top:1.2rem">
+      <div class="card chart-card">
+        <div class="card-title">Expected path <span class="hint">median of 5,000 simulations</span></div>
+        <canvas id="cmpPath"></canvas>
+      </div>
+      <div class="card chart-card">
+        <div class="card-title">Range of outcomes <span class="hint">worst 5% &middot; expected &middot; best 95%</span></div>
+        <canvas id="cmpRange"></canvas>
+      </div>
+    </div>
+    <div class="card chart-card wide" style="margin-top:1.2rem">
+      <div class="card-title">The past 2 years <span class="hint">what the same amount would have done</span></div>
+      <canvas id="cmpPast"></canvas>
+    </div>
+  </section>
+
   <!-- conclusion -->
   <section class="block">
     <div class="block-head"><h2>Conclusion</h2></div>
@@ -175,6 +234,9 @@
     <p class="block-sub">Stored in SQLite. Save a Low, a Medium and a High to compare them.</p></div>
   <div class="card table-card">
     <div class="table-scroll"><table class="saved" id="savedTable"></table></div>
+    <p class="cmp-note" id="savedHint">Tick two or more saved portfolios to compare them side by side.</p>
+    <div class="card table-card" id="savedCmp" hidden><div class="card-title">Side by side</div>
+      <div class="table-scroll"><table class="cmp" id="savedCmpTable"></table></div></div>
   </div>
   <div class="block-actions">
     <button class="btn-ghost danger" id="clearBtn">Clear all</button>
